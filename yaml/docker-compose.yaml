@@ -32,3 +32,6 @@ services:
       REDIS_HOST: '127.0.0.1'
       REDIS_PORT: '6379'
       REDIS_PASSWORD: '123456'
+      # Dify api 容器内部地址（用于 apps 接口反代注入 access_mode；
+      # 修复 Dify 1.14.1 打开应用配置面板时的 React #130 崩溃）
+      DIFY_API_INTERNAL_URL: 'http://api:5001'

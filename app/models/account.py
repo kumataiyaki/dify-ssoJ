@@ -263,10 +263,14 @@ class TenantAccountJoin(db.Model):
 
     @classmethod
     def create(cls, tenant_id: str, account_id: str, role: str):
+        # Dify 通过 tenant_account_joins.current=true 这一条记录解析 current_tenant_id。
+        # 不置位会导致 /console/api/account/profile 报 "The tenant information should be loaded." 500。
+        db.session.query(cls).filter(cls.account_id == account_id).update({cls.current: False})
         tenant_account_join = cls(
             tenant_id=tenant_id,
             account_id=account_id,
-            role=role
+            role=role,
+            current=True,
         )
         db.session.add(tenant_account_join)
         db.session.commit()

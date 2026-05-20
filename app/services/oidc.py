@@ -110,6 +110,11 @@ class OIDCService:
             user_name = user_info.get('name')
             user_email = user_info.get('email')
             user_roles = user_info.get('roles', [])
+            # picture 为 OIDC 标准 claim，Casdoor 默认走这个；avatar 作为兼容回落。
+            # 必须是 http(s):// 开头的外链或 None，否则 Dify 的 _build_avatar_url
+            # 会当成 upload_file_id 走 file_helpers.get_signed_file_url，拼出
+            # /files/<avatar>/file-preview?sign=... 导致 404（空串同样命中此分支）
+            user_avatar = user_info.get('picture') or user_info.get('avatar') or None
             logger.debug("用户信息: %s", user_info)
 
             # 验证必填字段
@@ -139,7 +144,7 @@ class OIDCService:
                 account = Account.create(
                     email=user_email,
                     name=user_name,
-                    avatar="",
+                    avatar=user_avatar,
                 )
                 TenantAccountJoin.create(self.tenant_id, account.id, user_role)
             else:
@@ -161,6 +166,12 @@ class OIDCService:
                 account.status = AccountStatus.ACTIVE
             if account.name != user_name:
                 account.name = user_name
+            if user_avatar:
+                if account.avatar != user_avatar:
+                    account.avatar = user_avatar
+            elif account.avatar == "":
+                # 清掉历史遗留的空串，避免命中 Dify 的签名分支拼出 /files//file-preview 404
+                account.avatar = None
 
             db.session.add(account)
             db.session.commit()

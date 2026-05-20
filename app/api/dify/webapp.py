@@ -3,6 +3,7 @@ import math
 from flask import request, jsonify
 
 from app.api.router import api, logger
+from app.configs import config
 from app.extensions.ext_redis import redis_client
 from app.models.account import Account, AccountStatus
 from app.models.engine import db
@@ -14,13 +15,13 @@ from app.services.passport import PassportService
 def get_enterprise_info():
     logger.info("get_enterprise_info called")
     data = {
-        "SSOEnforcedForSignin": True,
-        "SSOEnforcedForSigninProtocol": "oidc",
-        "SSOEnforcedForWebProtocol": "oidc",
-        "EnableEmailCodeLogin": True,
-        "EnableEmailPasswordLogin": True,
-        "IsAllowRegister": True,
-        "IsAllowCreateWorkspace": True,
+        "SSOEnforcedForSignin": config.SSO_ENFORCED_FOR_SIGNIN,
+        "SSOEnforcedForSigninProtocol": config.SSO_PROTOCOL if config.SSO_ENFORCED_FOR_SIGNIN else "",
+        "SSOEnforcedForWebProtocol": config.SSO_PROTOCOL if config.SSO_ENFORCED_FOR_SIGNIN else "",
+        "EnableEmailCodeLogin": config.ENABLE_EMAIL_CODE_LOGIN,
+        "EnableEmailPasswordLogin": config.ENABLE_EMAIL_PASSWORD_LOGIN,
+        "IsAllowRegister": config.IS_ALLOW_REGISTER,
+        "IsAllowCreateWorkspace": config.IS_ALLOW_CREATE_WORKSPACE,
         "Branding": {
             "applicationTitle": "",
             "loginPageLogo": "",
@@ -28,22 +29,22 @@ def get_enterprise_info():
             "favicon": "",
         },
         "WebAppAuth": {
-            "allowSso": True,
-            "allowEmailCodeLogin": True,
-            "allowEmailPasswordLogin": True,
+            "allowSso": config.WEBAPP_ALLOW_SSO,
+            "allowEmailCodeLogin": config.WEBAPP_ALLOW_EMAIL_CODE_LOGIN,
+            "allowEmailPasswordLogin": config.WEBAPP_ALLOW_EMAIL_PASSWORD_LOGIN,
         },
         "License": {
             "status": "active",
             "workspaces": {
                 "enabled": True,
                 "used": 1,
-                "limit": 100
+                "limit": 999999
             },
             "expiredAt": "2099-12-31T23:59:59Z",
         },
         "PluginInstallationPermission": {
-            "pluginInstallationScope": "all",
-            "restrictToMarketplaceOnly": True
+            "pluginInstallationScope": config.PLUGIN_INSTALLATION_SCOPE,
+            "restrictToMarketplaceOnly": not config.PLUGIN_ALLOW_ALL_SOURCES
         }
     }
 
@@ -141,24 +142,22 @@ def get_app_permission():
             logger.info(f"app_code {app_code} not found")
             return {"result": False}
 
-    try:
-        auth_header = request.headers.get("Authorization")
-        if auth_header is None:
-            raise
-        if " " not in auth_header:
-            raise
+    # Dify 公开 webapp 直接把 token 放在 x-app-passport 头，控制台调用才用 Authorization: Bearer
+    tk = request.headers.get("X-App-Passport")
+    if not tk:
+        auth_header = request.headers.get("Authorization", "")
+        if " " in auth_header:
+            scheme, candidate = auth_header.split(None, 1)
+            if scheme.lower() == "bearer":
+                tk = candidate
 
-        auth_scheme, tk = auth_header.split(None, 1)
-        auth_scheme = auth_scheme.lower()
-        if auth_scheme != "bearer":
-            raise
-
-        decoded = PassportService().verify(tk)
-        logger.info(f"app_id {app_id} decoded token: {decoded}")
-        user_id = decoded.get("end_user_id", decoded.get("user_id", "visitor"))
-    except Exception as e:
-        logger.error(f"get_app_permission error: {e}")
-        pass
+    if tk:
+        try:
+            decoded = PassportService().verify(tk)
+            logger.info(f"app_id {app_id} decoded token: {decoded}")
+            user_id = decoded.get("end_user_id", decoded.get("user_id", "visitor"))
+        except Exception as e:
+            logger.warning(f"get_app_permission token verify failed: {e}")
 
     access_mode = "public"
     access_mode_value = redis_client.get(f"webapp_access_mode:{app_id}")

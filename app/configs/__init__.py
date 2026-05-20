@@ -1,6 +1,7 @@
 from pydantic_settings import SettingsConfigDict
 
 from .app_config import AppConfig
+from .feature_config import FeatureConfig
 from .database_config import DatabaseConfig
 from .logger_config import LoggingConfig
 from .redis_config import RedisConfig
@@ -13,6 +14,7 @@ class Config(
     RedisConfig,
     LoggingConfig,
     SSOConfig,
+    FeatureConfig,
 ):
     model_config = SettingsConfigDict(
         # read from dotenv format config file

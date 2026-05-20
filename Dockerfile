@@ -1,30 +1,36 @@
-# ---- 运行环境 ----
-FROM python:3.11-alpine AS running
+# syntax=docker/dockerfile:1.7
+# ---- 构建阶段：uv 官方镜像自带 uv 二进制 ----
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim AS builder
 
-ENV LANG='en_US.UTF-8' \
-    LANGUAGE='en_US.UTF-8' \
-    TZ='Asia/Shanghai' \
-    GUNICORN_WORKERS=2 \
-    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
-
-RUN \
-    sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk --update -t --no-cache add tzdata libpq \
-    && ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
-    && echo "${TZ}" > /etc/timezone \
-    && apk add --no-cache --virtual .build-deps gcc python3-dev musl-dev postgresql-dev \
-    && pip install --upgrade pip \
-    && pip install --no-cache-dir psycopg2-binary \
-    && apk del --no-cache .build-deps
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
 WORKDIR /app
 
-# 下载依赖
-COPY requirements.txt .
-RUN --mount=type=cache,id=pip,target=/root/.cache \
-  pip install -r requirements.txt
+# 先装依赖，再装项目本身：业务代码改动时可命中依赖层缓存
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
 
-# 拷贝代码
 COPY . .
 
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
+
+
+# ---- 运行阶段：只带 Python 解释器 + 项目 venv ----
+FROM python:3.11-slim-bookworm
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    GUNICORN_WORKERS=2
+
+# tzdata 让 time.tzset() 能读到 /usr/share/zoneinfo/<TZ>，否则非 UTC 时区会静默 fallback
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /app /app
+
+EXPOSE 8000
 CMD ["sh", "-c", "exec gunicorn -w ${GUNICORN_WORKERS} -b 0.0.0.0:8000 app.main:app"]
