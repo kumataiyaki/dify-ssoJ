@@ -4,7 +4,7 @@
 
 ​	本项目基于[lework/dify-sso: dify login extension sso, oidc](https://github.com/lework/dify-sso)项目进行修改，使其能够支持最新版的Dify进行SSO认证，方便对接各种企业内部的登陆系统，支持标准SSO协议。`dify-sso`项目说明请查看原项目或当前项目下的`README_ORIGIN.md`文件。
 
-​	当前代码在`1.13.1`版本验证通过，兼容老版本。
+​	当前版本支持 Dify `1.14.1+`，已测试版本：`1.13.3`、`1.14.0`、`1.14.1`。通过环境变量 `LEGACY_KNOWLEDGE_RATE_LIMIT_AS_OBJECT` 可兼容 `1.13.x`。
 
 
 
@@ -12,7 +12,7 @@
 
 * docker
 * docker-compose
-* dify 1.13.1+
+* dify 1.13.3+（推荐 1.14.1+）
 * 在dify同台机器上配置，与dify公用数据库和redis。
 
 
