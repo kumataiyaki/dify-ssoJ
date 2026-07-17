@@ -2,17 +2,19 @@
 
 背景
 ----
-dify-sso 把 /console/api/system-features 里的 webapp_auth.enabled mock 成 True，
-让前端走"企业版 WebApp Auth"渲染路径。但 Dify 后端只在自身 ENTERPRISE_ENABLED=true
-时才会通过 EnterpriseService 把 access_mode 写进 app 响应；
-用户实际场景里 ENTERPRISE_ENABLED 没开（默认），后端返回 access_mode=null。
+dify-sso は `/console/api/system-features` 内の `webapp_auth.enabled` を `true` にモックし、
+フロントエンドが「Enterprise WebApp Auth」の描画経路を使用するようにしています。
 
-Dify 1.14.1 web 端 app-card-sections.tsx:305 直接用 ACCESS_MODE_ICON_MAP[access_mode]
-查表后渲染，access_mode=null 时 Icon=undefined，触发 React #130 —— 表现为打开应用
-配置面板时整页崩成"渲染此组件时发生了意外错误"。
+しかし、Dify のバックエンドは `ENTERPRISE_ENABLED=true` の場合にのみ、`EnterpriseService` を通じて `access_mode` をアプリレスポンスへ設定します。実際の利用環境では 
+`ENTERPRISE_ENABLED` は通常無効（デフォルト設定）のため、バックエンドからは `access_mode=null` が返されます。
 
-修复：把 /console/api/apps 与 /console/api/apps/<id>(/copy) 反代经过本服务，
-在 JSON 响应里给 app 对象补一个 access_mode="public"（社区版本来就是全员可见）。
+Dify 1.14.1 の `app-card-sections.tsx`（305行目）では、`ACCESS_MODE_ICON_MAP[access_mode]` を直接参照してアイコンを描画しています。
+`access_mode=null` の場合、取得されるアイコンは `undefined` となり、React Error #130 が発生します。その結果、アプリ設定パネルを開くと画面全体がクラッシュし、
+「このコンポーネントのレンダリング中に予期しないエラーが発生しました」と表示されます。
+
+修正内容:
+`/console/api/apps` および `/console/api/apps/<id>`（`/copy` を含む）へのリクエストを本サービス経由でプロキシし、
+JSON レスポンス内の app オブジェクトに `access_mode="public"` を補完します。コミュニティ版ではアプリはもともと全ユーザーに公開されるため、この値が適切です。
 """
 
 import json
