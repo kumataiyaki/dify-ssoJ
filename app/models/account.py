@@ -188,19 +188,19 @@ class Account(UserMixin, Base):
 
     @classmethod
     def get_by_email(cls, email: str):
-        """通过邮箱查找用户"""
+        """Find user by email"""
         return db.session.query(cls).filter(cls.email == email).first()
 
     @classmethod
     def create(cls, email: str, name: str, avatar: str = None):
-        """创建新用户"""
+        """Create new user"""
         account = cls(
             email=email,
             name=name,
             avatar=avatar,
             interface_theme="light",
-            interface_language="zh-Hans",
-            timezone="Asia/Shanghai",
+            interface_language="ja-JP",
+            timezone="Asia/Tokyo",
             status=AccountStatus.ACTIVE,
             initialized_at=datetime.now(UTC),
         )
