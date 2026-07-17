@@ -101,11 +101,11 @@ class OIDCService:
     def bind_account(self, code: str, client_host: str, redirect_uri_params: str = "") -> Account:
         """binds a user to the system"""
         try:
-            # 获取访问令牌
+            #  Get access token
             token_response = self.get_token(code, redirect_uri_params)
             access_token = token_response.get('access_token')
 
-            # 获取用户信息
+            # Get user information
             user_info = self.get_user_info(access_token)
             user_name = user_info.get('name')
             user_email = user_info.get('email')
@@ -115,17 +115,17 @@ class OIDCService:
             # 会当成 upload_file_id 走 file_helpers.get_signed_file_url，拼出
             # /files/<avatar>/file-preview?sign=... 导致 404（空串同样命中此分支）
             user_avatar = user_info.get('picture') or user_info.get('avatar') or None
-            logger.debug("用户信息: %s", user_info)
+            logger.debug("UserInfo: %s", user_info)
 
-            # 验证必填字段
+            # Validate required fields
             if not user_email:
-                logger.error("用户邮箱信息缺失: %s", user_info)
+                logger.error("User email address is missing: %s", user_info)
                 raise Exception("User email is required")
 
             if not user_name:
                 user_name = user_email.split('@')[0]  # 使用邮箱前缀作为默认用户名
 
-            # 确定用户角色（按优先级从高到低判断）
+            # Determine user roles (based on priority from highest to lowest)
             user_role = TenantAccountRole(self.account_default_role) if TenantAccountRole.is_valid_role(
                 self.account_default_role) else TenantAccountRole.NORMAL
             if TenantAccountRole.ADMIN in user_roles:
@@ -135,12 +135,12 @@ class OIDCService:
             elif TenantAccountRole.NORMAL in user_roles:
                 user_role = TenantAccountRole.NORMAL
 
-            # 查找系统用户
+            # Find system users
             account = Account.get_by_email(user_email)
 
-            # 如果系统用户不存在，则创建系统用户
+            # If the system user does not exist, create the system user.
             if not account:
-                logger.info("创建用户: %s, 角色: %s", user_email, user_role)
+                logger.info("CreateUser: %s, Role: %s", user_email, user_role)
                 account = Account.create(
                     email=user_email,
                     name=user_name,
@@ -148,15 +148,15 @@ class OIDCService:
                 )
                 TenantAccountJoin.create(self.tenant_id, account.id, user_role)
             else:
-                # 如果用户已存在，检查是否属于当前租户
+                # If the user already exists, check if they belong to the current tenant.
                 tenant_account_join = TenantAccountJoin.get_by_account(
                     self.tenant_id, account.id
                 )
                 if not tenant_account_join:
-                    logger.info("用户 %s 不属于当前租户，创建关联: 角色 %s", user_email, user_role)
+                    logger.info("User %s Not_belonging_to_the_current_tenant，Create_association: Role %s", user_email, user_role)
                     tenant_account_join = TenantAccountJoin.create(self.tenant_id, account.id, user_role)
                 else:
-                    logger.debug("用户 %s 已在当前租户中，不覆盖现有角色配置", user_email)
+                    logger.debug("User %s Already exists. Roles not overwritten.", user_email)
                     user_role = tenant_account_join.role
 
             # 更新用户登录信息
