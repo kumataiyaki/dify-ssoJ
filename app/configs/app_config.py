@@ -59,7 +59,7 @@ class AppConfig(BaseSettings):
         description="服务时区，影响 datetime.now() 与日志时间戳。"
                     "需使用 IANA tz 名称，如 Asia/Shanghai / UTC / America/New_York。"
                     "Docker 镜像需包含 tzdata 才能生效。",
-        default="Asia/Shanghai",
+        default="Asia/Tokyo",
     )
 
     DIFY_API_INTERNAL_URL: str = Field(
