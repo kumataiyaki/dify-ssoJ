@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 
 class FeatureConfig(BaseSettings):
-    """前端功能开关配置：控制 Dify 控制台/Webapp 读取到的 system-features。"""
+    """Frontend feature flag configuration for the Dify Console/WebApp via `system-features`."""
 
     # ---------- 版本对齐 ----------
     APP_DSL_VERSION: str = Field(
@@ -34,9 +34,10 @@ class FeatureConfig(BaseSettings):
     )
 
     # ---------- 登录方式 ----------
-    # 注意：SSO_ENFORCED_FOR_SIGNIN 字段名带 enforced 是 Dify 自己的命名，
-    # 实际语义是"SSO 是否作为登录选项出现"。True 显示 SSO 按钮，False 隐藏。
-    # 是否同时允许密码/验证码登录，由下面的 ENABLE_EMAIL_* 独立控制。
+    # Note: The field name `SSO_ENFORCED_FOR_SIGNIN` uses Dify's own naming convention. 
+    #Despite containing "enforced", it actually indicates whether SSO is available as a login option.
+    # When set to `true`, the SSO login button is displayed. When set to `false`, the SSO login button is hidden.
+    # Whether password or verification code login is allowed is controlled independently by the `ENABLE_EMAIL_*` settings below.
     SSO_ENFORCED_FOR_SIGNIN: bool = Field(
         description="是否显示 SSO 登录按钮（控制台 + Webapp 共用）。"
                     "True 时显示，False 时隐藏。即便置 True，只要 ENABLE_EMAIL_PASSWORD_LOGIN "
@@ -76,9 +77,9 @@ class FeatureConfig(BaseSettings):
     )
 
     # ---------- Webapp（终端用户应用）访问控制提示 ----------
-    # 注意：以下三个字段不控制 webapp 登录页 SSO 按钮的显示
-    # （那个由 SSO_ENFORCED_FOR_SIGNIN 控制）。
-    # 它们仅供 Dify 控制台「应用访问控制」模块用于提示文案显示。
+    # Note: The following three fields do not control the visibility of the SSO button on the WebApp login page
+    #  (this is controlled by `SSO_ENFORCED_FOR_SIGNIN`).
+    # They are used only by the Dify Console's "App Access Control" module to display informational messages.
     WEBAPP_ALLOW_SSO: bool = Field(
         description="Webapp 应用层是否允许 SSO 登录（仅影响访问控制提示，不影响登录页 SSO 按钮）。",
         default=True,
