@@ -253,7 +253,7 @@ REDIS_PASSWORD=difyai123456
 
 ```bash
 cd ${DIFY_DIR}/docker/nginx/conf.d
-vim default.conf.template  # 修改default.conf.template而非default.conf，default.conf.template文件重启nginx容器后自动生成default.conf
+nano default.conf.template  # 修改default.conf.template而非default.conf，default.conf.template文件重启nginx容器后自动生成default.conf
 ```
 
 
@@ -263,9 +263,28 @@ vim default.conf.template  # 修改default.conf.template而非default.conf，def
 在`/console/api`上方添加，优先级需要比较高，`http://dify-sso:8000`修改为实际的地址，此处`dify-sso`为部署的`dify-sso`容器名称，确保部署`dify-sso`，若`dify-sso`与`dify`不在同一台机器上，则可以使用IP+端口：
 
 ```nginx
-    location ~ (/console/api/system-features|/console/api/enterprise/sso/) {
-          proxy_pass http://dify-sso:8000;
-          include proxy.conf;
+    location ~ ^/console/api/system-features {
+      proxy_pass http://dify-sso:8000;
+      proxy_set_header X-Csrf-Token $http_x_csrf_token;
+      include proxy.conf;
+    }
+
+    location ~ ^/console/api/enterprise/sso/ {
+      proxy_pass http://dify-sso:8000;
+      proxy_set_header X-Csrf-Token $http_x_csrf_token;
+      include proxy.conf;
+    }
+
+    location ~ ^/console/api/enterprise/webapp/ {
+      proxy_pass http://dify-sso:8000;
+      proxy_set_header X-Csrf-Token $http_x_csrf_token;
+      include proxy.conf;
+    }
+
+    location ~ ^/api/enterprise/ {
+      proxy_pass http://dify-sso:8000;
+      proxy_set_header X-Csrf-Token $http_x_csrf_token;
+      include proxy.conf;
     }
 ```
 
@@ -278,9 +297,28 @@ server {
     listen ${NGINX_PORT};
     server_name ${NGINX_SERVER_NAME};
     
-    location ~ (/console/api/system-features|/console/api/enterprise/sso/) {
-          proxy_pass http://dify-sso:8000;
-          include proxy.conf;
+    location ~ ^/console/api/system-features {
+      proxy_pass http://dify-sso:8000;
+      proxy_set_header X-Csrf-Token $http_x_csrf_token;
+      include proxy.conf;
+    }
+
+    location ~ ^/console/api/enterprise/sso/ {
+      proxy_pass http://dify-sso:8000;
+      proxy_set_header X-Csrf-Token $http_x_csrf_token;
+      include proxy.conf;
+    }
+
+    location ~ ^/console/api/enterprise/webapp/ {
+      proxy_pass http://dify-sso:8000;
+      proxy_set_header X-Csrf-Token $http_x_csrf_token;
+      include proxy.conf;
+    }
+
+    location ~ ^/api/enterprise/ {
+      proxy_pass http://dify-sso:8000;
+      proxy_set_header X-Csrf-Token $http_x_csrf_token;
+      include proxy.conf;
     }
 
     location /console/api {
