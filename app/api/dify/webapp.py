@@ -10,6 +10,17 @@ from app.models.engine import db
 from app.models.model import Site
 from app.services.passport import PassportService
 
+def _resolve_app_id(app_id):
+    """Convert installed_apps.id to app_id"""
+    from sqlalchemy import text
+    result = db.session.execute(
+        text("SELECT app_id FROM installed_apps WHERE id = :id"),
+        {"id": app_id}
+    ).fetchone()
+    if result:
+        logger.info(f"_resolve_app_id: {app_id} -> {result[0]}")
+        return str(result[0])
+    return app_id
 
 @api.get("/info")
 def get_enterprise_info():
@@ -73,9 +84,9 @@ def set_app_access_mode():
     for subject in subjects:
         subject_id = subject.get("subjectId", "")
         subject_type = subject.get("subjectType", "")
-        if subject_type == "account":
+        if subject_type in ("account", "ACCESS_SUBJECT_TYPE_ACCOUNT"):
             accounts.append(subject_id)
-        elif subject_type == "group":
+        elif subject_type in ("group", "ACCESS_SUBJECT_TYPE_GROUP"):
             groups.append(subject_id)
 
     redis_client.set(f"webapp_access_mode:{appId}", access_mode)
@@ -92,6 +103,8 @@ def get_app_access_mode():
     app_id = request.args.get("appId", "")
     app_code = request.args.get("appCode", "")
     logger.info(f"get_app_access_mode: app_id={app_id}, app_code={app_code}")
+    logger.info(f"get_app_access_mode: request.url={request.url}")
+    logger.info(f"get_app_access_mode: request.args={dict(request.args)}")
 
     if app_code != "":
         site = db.session.query(Site).filter(Site.code == app_code).first()
@@ -101,6 +114,7 @@ def get_app_access_mode():
         logger.info(f"app_id is empty, return public")
         return {"accessMode": "public"}
     else:
+        app_id = _resolve_app_id(app_id)
         access_mode = redis_client.get(f"webapp_access_mode:{app_id}")
         if access_mode:
             logger.info(f"app_id:{app_id}, access_mode: {access_mode.decode()}")
@@ -133,6 +147,15 @@ def get_app_permission():
     app_id = request.args.get("appId", "")
     app_code = request.args.get("appCode", "")
     logger.info(f"get_app_permission: app_id={app_id}, app_code={app_code}")
+    logger.info(f"get_app_permission: request.url={request.url}")
+    logger.info(f"get_app_permission: request.args={dict(request.args)}")
+    logger.info(f"get_app_permission: headers.Authorization={request.headers.get('Authorization', '')}")
+    logger.info(f"get_app_permission: headers.X-App-Passport={request.headers.get('X-App-Passport', '')}")
+    logger.info(f"get_app_permission: headers.Referer={request.headers.get('Referer', '')}")
+
+    if request.path.startswith("/console/api/enterprise/webapp/permission"):
+        logger.info(f"get_app_permission: console request, app_id={app_id}, access granted")
+        return {"result": True}
 
     if app_code != "":
         site = db.session.query(Site).filter(Site.code == app_code).first()
@@ -142,7 +165,7 @@ def get_app_permission():
             logger.info(f"app_code {app_code} not found")
             return {"result": False}
 
-    # Dify 公开 webapp 直接把 token 放在 x-app-passport 头，控制台调用才用 Authorization: Bearer
+    # Use `X-App-Passport` for Dify public web apps; use `Authorization: Bearer` for console calls.
     tk = request.headers.get("X-App-Passport")
     if not tk:
         auth_header = request.headers.get("Authorization", "")
@@ -217,16 +240,16 @@ def get_app_subjects():
 @api.get("/console/api/enterprise/webapp/app/subject/search")
 def search_app_subjects():
     try:
-        # 参数验证和获取
+        # Validate parameters
         page = max(1, int(request.args.get("pageNumber", 1)))
-        page_size = min(100, max(1, int(request.args.get("resultsPerPage", 10))))  # 限制页面大小
+        page_size = min(100, max(1, int(request.args.get("resultsPerPage", 10))))  # Limit page size
         keyword = request.args.get("keyword", "").strip()
         logger.info(f"search_app_subjects: page={page}, page_size={page_size}, keyword={keyword}")
 
-        # 构建基础查询条件
+        # Build base query conditions
         base_query = db.session.query(Account).filter(Account.status == AccountStatus.ACTIVE)
 
-        # 添加搜索条件 - 支持姓名和邮箱搜索
+        # Add search filters (name/email)
         if keyword:
             search_filter = db.or_(
                 Account.name.ilike(f"%{keyword}%"),
@@ -234,10 +257,10 @@ def search_app_subjects():
             )
             base_query = base_query.filter(search_filter)
 
-        # 计算总数和分页数据（使用窗口函数优化）
-        paginated_query = base_query.order_by(Account.name, Account.id)  # 确保排序稳定性
+        # Get total count and paginated data (window function optimized)
+        paginated_query = base_query.order_by(Account.name, Account.id)  # Ensure stable sorting
 
-        # 获取总数
+        # Get total count
         total_count = base_query.count()
 
         if total_count == 0:
@@ -248,11 +271,11 @@ def search_app_subjects():
                 "hasMore": False,
             }
 
-        # 分页查询
+        # Query page data
         offset = (page - 1) * page_size
         users = paginated_query.limit(page_size).offset(offset).all()
 
-        # 构建响应数据
+        # Build response
         subjects = [
             {
                 "subjectId": str(user.id),
@@ -268,7 +291,7 @@ def search_app_subjects():
             for user in users
         ]
 
-        # 计算分页信息
+        # Calculate pagination info
         total_pages = math.ceil(total_count / page_size)
         has_more = page < total_pages
 
@@ -280,13 +303,13 @@ def search_app_subjects():
         }
 
     except ValueError as e:
-        # 参数类型错误
+        # Invalid parameter type
         return {
             "error": "Invalid parameter format",
             "message": "pageNumber and resultsPerPage must be valid integers"
         }, 400
     except Exception as e:
-        # 其他异常
+        # Other exceptions
         return {
             "error": "Internal server error",
             "message": "An error occurred while searching subjects"
@@ -367,40 +390,61 @@ def get_webapp_permission_batch():
     appCodes = request.json.get("appCodes", [])
     userId = request.json.get("userId", "")
     permissions = {}
-    logger.info(f"get_webapp_permission_batch: appCodes={appCodes}, userId={userId}")
-
-    for app_code in appCodes:
-        permissions[app_code] = False
-        site = db.session.query(Site).filter(Site.code == app_code).first()
-        if site:
-            app_id = site.app_id
-        else:
-            continue
-
+    
+    logger.info(
+        f"get_webapp_permission_batch: appCodes={appCodes}, appIds={appIds}, userId={userId}"
+    )
+    
+def check_permission(app_id):
         access_mode = "public"
-        access_mode_value = redis_client.get(f"webapp_access_mode:{app_id}")
+
+        access_mode_value = redis_client.get(
+            f"webapp_access_mode:{app_id}"
+        )
+
         if access_mode_value is not None:
             access_mode = access_mode_value.decode()
 
         if access_mode == "public":
-            permissions[app_code] = True
-            continue
+            return True
+
 
         if access_mode in ["private_all", "sso_verified"]:
-            permissions[app_code] = True
-            continue
-        else:
-            accounts_value = redis_client.get(f"webapp_access_mode:accounts:{app_id}")
-            if accounts_value:
-                accounts = accounts_value.decode().split(",")
-                if userId in accounts:
-                    permissions[app_code] = True
-                else:
-                    permissions[app_code] = False
-            else:
-                permissions[app_code] = False
+            return True
 
-    return {"permissions": permissions}
+        accounts_value = redis_client.get(
+            f"webapp_access_mode:accounts:{app_id}"
+        )
+
+        if accounts_value:
+            accounts = accounts_value.decode().split(",")
+            return userId in accounts
+
+        return False
+
+
+    # Dify 1.15:
+    # If `appIds` (UUIDs) are provided
+    for app_id in appIds:
+        permissions[app_id] = check_permission(app_id)
+
+
+    # Old Version compatible:
+    # If `appCodes` are provided
+    for app_code in appCodes:
+        permissions[app_code] = False
+
+        site = db.session.query(Site).filter(
+            Site.code == app_code
+        ).first()
+
+        if site:
+            permissions[app_code] = check_permission(site.app_id)
+
+
+    return {
+        "permissions": permissions
+    }
 
 
 @api.delete("/webapp/clean")
@@ -421,7 +465,7 @@ def clean_webapp_access_mode():
 # PluginManagerService
 @api.post("/check-credential-policy-compliance")
 def check_credential_policy_compliance():
-    # 示例请求体
+    # Example request bod
     # {'dify_credential_id': '0198eabb-3b2c-793e-a491-3ddf5bfc75a6', 'provider': 'langgenius/tongyi/tongyi', 'credential_type': 0}
     data = request.json
     logger.info(f"check_credential_policy_compliance called with data: {data}")
