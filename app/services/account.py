@@ -31,10 +31,12 @@ class AccountService:
 
     @staticmethod
     def store_refresh_token(refresh_token: str, account_id: str):
-        redis_client.setex(AccountService._get_refresh_token_key(refresh_token), config.REFRESH_TOKEN_EXPIRE_DAYS,
-                           account_id)
+        # Dify 本体（api/services/account_service.py）と同じく timedelta(days=...) で有効期限を設定する。
+        # setex の第 2 引数に整数を渡すと「秒」として扱われるため、日数をそのまま渡してはいけない
+        refresh_token_expiry = timedelta(days=config.REFRESH_TOKEN_EXPIRE_DAYS)
+        redis_client.setex(AccountService._get_refresh_token_key(refresh_token), refresh_token_expiry, account_id)
         redis_client.setex(
-            AccountService._get_account_refresh_token_key(account_id), config.REFRESH_TOKEN_EXPIRE_DAYS, refresh_token
+            AccountService._get_account_refresh_token_key(account_id), refresh_token_expiry, refresh_token
         )
 
     @staticmethod

@@ -22,12 +22,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM python:3.11-slim-bookworm
 
 ENV PATH="/app/.venv/bin:$PATH" \
-    GUNICORN_WORKERS=2
+    GUNICORN_WORKERS=2 \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 # タイムゾーン情報とCA証明書をインストール
-# 内部CAの証明書を信頼できるようにする(例.hogehoge.crtをdify-ssoと同じ階層に保存する)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         tzdata \
@@ -37,8 +36,11 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=builder /app /app
 
-# 内部CA証明書を追加
-COPY tslabCA.crt /usr/local/share/ca-certificates/hogehoge.crt
+# 社内CA証明書を追加（任意）
+# certs/ に置いた PEM 形式の *.crt（複数可）をシステムの証明書ストアに追加する。
+# *.crt が 1 つもなくてもビルドできる（.gitkeep / README.md は update-ca-certificates が無視する）。
+# requests は REQUESTS_CA_BUNDLE（上の ENV）でこのストアを参照する。
+COPY certs/ /usr/local/share/ca-certificates/company/
 
 # CA証明書ストアを更新
 RUN update-ca-certificates

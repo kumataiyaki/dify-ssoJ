@@ -1,5 +1,5 @@
 import logging
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Dict
 from urllib.parse import urlencode, unquote
 
@@ -188,7 +188,9 @@ class OIDCService:
             account = self.bind_account(code, client_host, redirect_uri_params)
 
             # 生成JWT token
-            exp_dt = naive_utc_now() + timedelta(minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES)
+            # naive な UTC 時刻に .timestamp() を使うとローカル時刻（TIMEZONE）として解釈され、
+            # Asia/Tokyo では exp が 9 時間ずれる。タイムゾーン付きの UTC 時刻で計算する
+            exp_dt = datetime.now(UTC) + timedelta(minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES)
             exp = int(exp_dt.timestamp())
             account_id = str(account.id)
 

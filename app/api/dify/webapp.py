@@ -149,8 +149,9 @@ def get_app_permission():
     logger.info(f"get_app_permission: app_id={app_id}, app_code={app_code}")
     logger.info(f"get_app_permission: request.url={request.url}")
     logger.info(f"get_app_permission: request.args={dict(request.args)}")
-    logger.info(f"get_app_permission: headers.Authorization={request.headers.get('Authorization', '')}")
-    logger.info(f"get_app_permission: headers.X-App-Passport={request.headers.get('X-App-Passport', '')}")
+    # トークン本体はログに出さない（漏えい防止）。有無だけを記録する
+    logger.info(f"get_app_permission: headers.Authorization present={bool(request.headers.get('Authorization'))}")
+    logger.info(f"get_app_permission: headers.X-App-Passport present={bool(request.headers.get('X-App-Passport'))}")
     logger.info(f"get_app_permission: headers.Referer={request.headers.get('Referer', '')}")
 
     if request.path.startswith("/console/api/enterprise/webapp/permission"):
@@ -318,7 +319,7 @@ def search_app_subjects():
 
 @api.get("/webapp/access-mode/code")
 def get_webapp_access_mode_code():
-    logger.info("get_webapp_access_mode_code called", request.args)
+    logger.info("get_webapp_access_mode_code called: %s", dict(request.args))
     app_code = request.args.get("app_code", "")
     if app_code == "":
         app_code = request.args.get("appCode", "")
@@ -388,6 +389,7 @@ def get_webapp_permission():
 @api.post("/webapp/permission/batch")
 def get_webapp_permission_batch():
     appCodes = request.json.get("appCodes", [])
+    appIds = request.json.get("appIds", [])
     userId = request.json.get("userId", "")
     permissions = {}
     
@@ -395,7 +397,7 @@ def get_webapp_permission_batch():
         f"get_webapp_permission_batch: appCodes={appCodes}, appIds={appIds}, userId={userId}"
     )
     
-def check_permission(app_id):
+    def check_permission(app_id):
         access_mode = "public"
 
         access_mode_value = redis_client.get(

@@ -177,3 +177,7 @@ cython_debug/
 .idea/
 
 .vscode/
+# 社内CA証明書（certs/）は誤ってコミットしないよう除外する。.gitkeep と README.md だけ管理対象にする
+certs/*
+!certs/.gitkeep
+!certs/README.md
