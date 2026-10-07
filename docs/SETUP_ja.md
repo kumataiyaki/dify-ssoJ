@@ -4,7 +4,7 @@ Dify Community 版（Docker Compose で構築したもの）に dify-ssoJ を追
 
 > [!IMPORTANT]
 > - 非公式のソフトウェアです。Dify の内部 API と DB に依存しています。**必ず検証環境で先に試し**、DB のバックアップを取ってから作業してください。
-> - 上流の最新コミット `86b4f58` は、**修正しないとビルドも起動もできません**。最初に「[A-3. ビルド前の確認](#a-3-ビルド前の確認既知の問題への対処)」を行ってください。
+> - このフォークのソースからビルドしてください。上流 `86b4f58` にあった、起動やビルドができない不具合はこのフォークで修正済みです（[README の「既知の問題と修正状況」](../README.md#5-既知の問題と修正状況)）。
 > - 「**要確認**」と書いた箇所は、コードや資料からは確定できなかった点、または実機で検証していない点です。
 
 この手順で使う値の例です。実際の環境に合わせて読み替えてください。
@@ -37,33 +37,9 @@ git clone https://github.com/kumataiyaki/dify-ssoJ.git /opt/dify-ssoJ
 cd /opt/dify-ssoJ
 ```
 
-### A-3. ビルド前の確認（既知の問題への対処）
+### A-3. 社内 CA 証明書の配置（必要な場合のみ）
 
-上流 `86b4f58` の時点では、次の 3 つを直さないと動きません。このフォークのコードは上流のままなので、手元で修正してください（行番号は `86b4f58` 時点のものです）。
-
-1. **`app/api/dify/webapp.py` の `IndentationError`**: これを直さないと起動しません。次の修正で構文エラーが解消され、アプリを import できることを確認しました（`/webapp/permission/batch` の動作自体は**要確認**）。
-
-   ```bash
-   sed -i '390a\    appIds = request.json.get("appIds", [])' app/api/dify/webapp.py
-   sed -i '399s/^def check_permission(app_id):$/    def check_permission(app_id):/' app/api/dify/webapp.py
-   python3 -m py_compile app/api/dify/webapp.py && echo OK
-   ```
-
-   修正内容は、`appIds = request.json.get("appIds", [])` を `get_webapp_permission_batch()` の中に追加することと、`def check_permission(app_id):` の行頭に空白を 4 つ入れて内側の関数にすることです。
-
-2. **Dockerfile の 25 行目の行末に `\` がない**: `GUNICORN_WORKERS=2` を `GUNICORN_WORKERS=2 \` にします。
-
-   ```bash
-   sed -i '25s/GUNICORN_WORKERS=2$/GUNICORN_WORKERS=2 \\/' Dockerfile
-   ```
-
-3. **Dockerfile の 41 行目の `COPY tslabCA.crt`**: 社内 CA を使う場合は、証明書をリポジトリ直下に `tslabCA.crt` という名前で置きます（[B 章](#b-社内-ca-証明書を使う場合)）。社内 CA を使わない場合は、この行をコメントアウトします。
-
-   ```bash
-   sed -i 's|^COPY tslabCA.crt|# COPY tslabCA.crt|' Dockerfile
-   ```
-
-2 と 3 を直した Dockerfile は、BuildKit のパーサーでエラーにならないことを確認しています（実際のビルドは**要確認**）。
+IdP（Keycloak など）の HTTPS 証明書が社内 CA で署名されている場合は、ビルドの前に社内 CA の証明書（PEM 形式、拡張子 `.crt`）を `certs/` に置きます。詳しくは [B 章](#b-社内-ca-証明書を使う場合)を参照してください。公的な CA の証明書を使っている IdP なら、何もしなくて構いません（`certs/` が空でもビルドできます）。
 
 ### A-4. `.env` の作成
 
@@ -81,11 +57,11 @@ chmod 600 .env
 | `TENANT_ID` | SSO ユーザーを参加させるワークスペースの ID。確認方法は下記 |
 | `EDITION` | `SELF_HOSTED` のまま |
 | `ACCOUNT_DEFAULT_ROLE` | 初めてワークスペースに参加するユーザーのロール。`normal`（メンバー）、`editor`（編集者）、`admin`（管理者）のどれか。無効な値の場合は `normal` になります（`app/services/oidc.py:129-130`）。`owner` も値としては受け付けますが、使わないでください |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` など、トークンに関する 4 項目 | `.env.example` の値のままで構いません |
-| `TIMEZONE` | 日本で使う場合は **`Asia/Tokyo`** にします（`.env.example` は `Asia/Shanghai` です） |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` など、トークンに関する 4 項目 | `.env.example` の値のままで構いません。`REFRESH_TOKEN_PREFIX` と `ACCOUNT_REFRESH_TOKEN_PREFIX` は Dify 本体で固定の値（`refresh_token:`、`account_refresh_token:`）なので、変更しないでください |
+| `TIMEZONE` | `Asia/Tokyo`（`.env.example` の値のまま） |
 | `OIDC_*` | [A-5](#a-5-idp-の設定keycloak-の例) で確認します |
 | `DB_USERNAME` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_DATABASE` | Dify の `.env` と同じ値にします: `grep -E '^DB_(USERNAME\|PASSWORD\|HOST\|PORT\|DATABASE)=' ${DIFY_DIR}/docker/.env`。`DB_HOST` には Dify の Compose のサービス名（例: `db_postgres`。古い Dify では `db`）を指定します |
-| `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` / `REDIS_PASSWORD` | Dify の `.env` と同じ値にします: `grep -E '^REDIS_(HOST\|PORT\|DB\|PASSWORD)=' ${DIFY_DIR}/docker/.env`。`REDIS_DB` も Dify と同じ番号にしてください（リフレッシュトークンを Dify と同じキー名で保存するため。**要確認**） |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` / `REDIS_PASSWORD` | Dify の `.env` と同じ値にします: `grep -E '^REDIS_(HOST\|PORT\|DB\|PASSWORD)=' ${DIFY_DIR}/docker/.env`。`REDIS_DB` も Dify と同じ番号にしてください。dify-sso が保存したリフレッシュトークンを、Dify 本体がトークン更新のときに同じ Redis から読むためです |
 | `REDIS_SERIALIZATION_PROTOCOL` | `2` のまま |
 | `APP_DSL_VERSION` | Dify の `api/constants/dsl_version.py` にある `CURRENT_APP_DSL_VERSION` の値 |
 | `LEGACY_KNOWLEDGE_RATE_LIMIT_AS_OBJECT` | Dify 1.13.x は `true`、1.14.0 以降は `false` |
@@ -154,16 +130,18 @@ Casdoor では「アプリケーション」を作り、リダイレクト URL �
 
 ### A-6. イメージのビルドとコンテナの起動
 
-#### 方法 1: ソースからビルドする（lockdlock 版の変更を使う場合）
+#### 方法 1: このフォークのソースからビルドする（推奨）
 
 ```bash
 cd /opt/dify-ssoJ
 docker build -t dify-ssoj:local .
 ```
 
+`certs/` に `.crt` を置いていれば、ビルド時にイメージに組み込まれます（[B-3](#b-3-ビルド時にイメージへ組み込む方法推奨)）。
+
 #### 方法 2: 公開イメージを使う（ビルドしない場合）
 
-`ghcr.io/xjfyt/dify-sso:latest` は xjfyt 版（`a2b5bb5`）のイメージです。A-3 の不具合は含まれていませんが、lockdlock 版の変更（Asia/Tokyo、CA 証明書、1.15 向けの修正）も入っていません。`TIMEZONE=Asia/Tokyo` は `.env` で指定できます。社内 CA は [B-4](#b-4-ビルドせずにボリュームマウントで渡す方法) の方法で渡せます。
+`ghcr.io/xjfyt/dify-sso:latest` は xjfyt 版（`a2b5bb5`）のイメージで、**このフォークの修正は入っていません**。リフレッシュトークンが約 30 秒で消える、`TIMEZONE=Asia/Tokyo` だと WebApp の SSO トークンが発行時点で期限切れになる、などの不具合が残っています。どうしてもビルドできない場合の一時的な手段と考えてください。社内 CA は [B-4](#b-4-ビルドせずにボリュームマウントで渡す方法) の方法で渡せます。
 
 #### 起動
 
@@ -188,7 +166,7 @@ docker run -d \
 
 - Nginx はコンテナ名 `dify-sso` で接続するので、`-p 8000:8000` は必須ではありません。ホストから直接確認したいときだけ付けてください。
 - Dify の `docker-compose.yaml` にまとめたい場合は `yaml/docker-compose.yaml` を参考にします。ただし中身はサンプル値なので、`.env` と同じ値に書き換えてください。
-- 起動ログを確認します: `docker logs -f dify-sso`。`IndentationError`、`Failed to load OIDC configuration`、`CERTIFICATE_VERIFY_FAILED` が出ていないことを確認してください。
+- 起動ログを確認します: `docker logs -f dify-sso`。`Failed to load OIDC configuration` や `CERTIFICATE_VERIFY_FAILED` が出ていないことを確認してください。
 
 ### A-7. Nginx の設定
 
@@ -261,47 +239,51 @@ curl -s https://dify.example.com/console/api/enterprise/sso/oidc/login
 
 ## B. 社内 CA 証明書を使う場合
 
-Keycloak などの IdP が**社内 CA で署名された TLS 証明書**を使っている場合、dify-sso から IdP への HTTPS 接続（discovery、token、userinfo）で証明書の検証に失敗します。
+Keycloak などの IdP が**社内 CA で署名された TLS 証明書**を使っている場合、dify-sso から IdP への HTTPS 接続（discovery、token、userinfo）で証明書の検証に失敗します。dify-sso は起動時に discovery URL へ接続するので、そのままでは**起動できません**。
 
-### B-1. コードでの扱い
+### B-1. 仕組み
 
 | 箇所 | 内容 |
 | --- | --- |
-| `Dockerfile:31-35` | `ca-certificates`（と `tzdata`）をインストールする |
-| `Dockerfile:41` | ビルドコンテキスト直下の `tslabCA.crt` を `/usr/local/share/ca-certificates/hogehoge.crt` としてイメージにコピーする |
-| `Dockerfile:44` | `update-ca-certificates` を実行し、システムのバンドル `/etc/ssl/certs/ca-certificates.crt` に社内 CA を追加する |
-| `Dockerfile:24-27` | `REQUESTS_CA_BUNDLE` と `SSL_CERT_FILE` を `/etc/ssl/certs/ca-certificates.crt` に設定する（25 行目の行末に `\` がないため、[A-3](#a-3-ビルド前の確認既知の問題への対処) の修正が必要） |
-| `app/services/oidc.py:38, 84, 94` | IdP への通信は `requests` の `get` / `post` で行っている。`verify=` は指定していない |
-| アプリのコード全体 | CA 証明書や TLS の検証に関する設定項目（環境変数や `verify` の指定）はない |
+| `app/services/oidc.py:38, 84, 94` | IdP への通信は `requests` の `get` / `post` で行う。`verify=` は指定していない |
+| `Dockerfile:24-27` | `REQUESTS_CA_BUNDLE` と `SSL_CERT_FILE` を `/etc/ssl/certs/ca-certificates.crt`（システムの証明書ストア）に設定する |
+| `Dockerfile:30-34` | `ca-certificates` をインストールする |
+| `Dockerfile:43` | `certs/` の中身を `/usr/local/share/ca-certificates/company/` にコピーする |
+| `Dockerfile:46` | `update-ca-certificates` を実行する。`.crt` ファイルだけがシステムの証明書ストアに追加される（`.gitkeep` と `README.md` は無視される） |
 
-`requests` は、`verify` を指定しないと **`REQUESTS_CA_BUNDLE` 環境変数のファイル**を CA バンドルとして使い、設定がなければ certifi 同梱のバンドルを使います。**`SSL_CERT_FILE` だけでは requests には効きません。** ローカルの Python 3.11 と requests 2.32.3 で、テスト用の社内 CA を使って確認しました。
+`requests` は、`verify` を指定しないと **`REQUESTS_CA_BUNDLE` 環境変数のファイル**を CA バンドルとして使い、設定がなければ certifi に同梱されたバンドルを使います。**`SSL_CERT_FILE` だけでは requests には効きません。** 社内 CA を信頼させるには「社内 CA を含むバンドルを用意し、`REQUESTS_CA_BUNDLE` でそのファイルを指す」必要があります。方法は 2 つあります。
 
-- 環境変数なし、または `SSL_CERT_FILE` だけ設定: `CERTIFICATE_VERIFY_FAILED` になり、起動に失敗する
-- `REQUESTS_CA_BUNDLE` を設定: 起動できる
+- **B-3. ビルド時に組み込む（推奨）**: `certs/` に置いてビルドする。イメージの `REQUESTS_CA_BUNDLE` がシステムの証明書ストアを指しているので、追加の設定はいらない
+- **B-4. 実行時にマウントする**: ビルドせずに、バンドルファイルをマウントして `REQUESTS_CA_BUNDLE` で指定する
 
-つまり、社内 CA を信頼させるには「**社内 CA を含むバンドルファイル**を用意し、**`REQUESTS_CA_BUNDLE` でそのファイルを指す**」必要があります。lockdlock 版の Dockerfile は、これをビルド時に行っています。
+ローカルの Python 3.11 と requests 2.32.3 で、テスト用の社内 CA（ルート CA → 中間 CA → サーバー証明書）を使って次のことを確認しました。Debian bookworm の `update-ca-certificates` スクリプトで、ビルド時と同じ処理も再現しています。
+
+| `certs/` の中身 | 結果 |
+| --- | --- |
+| `.crt` なし | `update-ca-certificates` はエラーなく完了する（バンドルは変わらない） |
+| ルート CA だけ（サーバーが中間 CA を送らない場合） | `CERTIFICATE_VERIFY_FAILED` で起動に失敗する |
+| ルート CA と中間 CA | 起動できる |
+| （参考）`SSL_CERT_FILE` だけ設定し、`REQUESTS_CA_BUNDLE` を設定しない | `CERTIFICATE_VERIFY_FAILED` で起動に失敗する |
 
 ### B-2. 証明書の準備
 
-- **形式**: PEM（`-----BEGIN CERTIFICATE-----` で始まるテキスト）。Dockerfile が読み込むファイル名は **`tslabCA.crt`**（拡張子 `.crt`）です。
-- **含める証明書**: 社内の**ルート CA** は必須です。IdP のサーバーが中間 CA 証明書を送っていない場合は、**中間 CA** も必要です。`update-ca-certificates` は `.crt` ファイルの中身をそのままバンドルに追加するので、ルート CA と中間 CA を 1 つのファイルに連結しても構いません。本来は、IdP 側で中間 CA を含むチェーン全体を送るように設定するのが望ましいです。
-- 確認と変換:
+- **形式**: PEM（`-----BEGIN CERTIFICATE-----` で始まるテキスト）。拡張子は **`.crt`** にします。`.crt` 以外（`.pem`、`.cer` など）は取り込まれません。
+- **含める証明書**: 社内の**ルート CA** は必須です。IdP のサーバーが中間 CA の証明書を送っていない場合は、**中間 CA** も必要です（B-5 の `openssl s_client -showcerts` で確認できます）。ファイルは複数置けます。本来は、IdP 側で中間 CA を含むチェーン全体を送るように設定するのが望ましいです。
+- **確認と変換**:
 
   ```bash
-  openssl x509 -in tslabCA.crt -noout -subject -issuer -enddate   # PEM として読めるか、有効期限
-  openssl x509 -inform DER -in rootca.cer -out tslabCA.crt         # DER 形式（バイナリ）なら PEM に変換
-  cat rootca.pem intermediate.pem > tslabCA.crt                    # ルート CA と中間 CA を連結する場合
+  openssl x509 -in company-root.crt -noout -subject -issuer -enddate   # PEM として読めるか、有効期限
+  openssl x509 -inform DER -in rootca.cer -out company-root.crt        # DER 形式（バイナリ）なら PEM に変換
   ```
 
-- **配置場所**: リポジトリの直下（`Dockerfile` と同じ場所）に置きます。`/opt/dify-ssoJ/tslabCA.crt` になります。
-- これは公開リポジトリのフォークです。**証明書を誤ってコミットしないように注意してください**（`.gitignore` では除外されていません）。
+- **配置場所**: リポジトリの `certs/`（例: `/opt/dify-ssoJ/certs/company-root.crt`、`/opt/dify-ssoJ/certs/company-intermediate.crt`）。
+- `certs/` の中は `.gitkeep` と `README.md` を除いて `.gitignore` で除外しています。これは公開リポジトリのフォークなので、`git add -f` などで**証明書をコミットしないでください**。なお `.gitignore` は Docker のビルドには影響しないので、`certs/` に置いた証明書はビルドに使われます。
 
-### B-3. ビルド時にイメージへ組み込む方法（lockdlock 版の方式）
+### B-3. ビルド時にイメージへ組み込む方法（推奨）
 
 ```bash
 cd /opt/dify-ssoJ
-# A-3 の 1 と 2 を修正してから（3 のコメントアウトはしない）
-cp /path/to/社内CA.crt ./tslabCA.crt
+cp /path/to/company-root.crt /path/to/company-intermediate.crt certs/
 docker build -t dify-ssoj:local .
 docker rm -f dify-sso   # すでに起動している場合
 # A-6 の docker run を実行する
@@ -310,31 +292,34 @@ docker rm -f dify-sso   # すでに起動している場合
 組み込まれたことを確認します。
 
 ```bash
-docker exec dify-sso sh -c 'echo $REQUESTS_CA_BUNDLE; ls -l /etc/ssl/certs/hogehoge.pem'
+docker exec dify-sso sh -c 'echo $REQUESTS_CA_BUNDLE; ls -l /etc/ssl/certs/ | grep company'
+# /etc/ssl/certs/ca-certificates.crt と、certs/ に置いたファイル名の .pem（例: company-root.pem）へのリンクが表示されれば OK
+# （リンク先は /usr/local/share/ca-certificates/company/ 配下）
 ```
 
-CA 証明書を更新したときは、イメージをビルドし直してコンテナを作り直します。
+CA 証明書を追加・更新したときは、イメージをビルドし直してコンテナを作り直してください。
 
 ### B-4. ビルドせずにボリュームマウントで渡す方法
 
-アプリは `REQUESTS_CA_BUNDLE` を実行時に参照するので、**社内 CA を含むバンドルをマウントし、`REQUESTS_CA_BUNDLE` でそのファイルを指定する**方法でも対応できます。公開イメージ（`ghcr.io/xjfyt/dify-sso:latest`）でも使えます。B-1 の確認結果からこの方法で動くはずですが、実際のコンテナでは試していないので**要確認**です。
+アプリは `REQUESTS_CA_BUNDLE` を実行時に参照するので、**社内 CA を含むバンドルをマウントし、`REQUESTS_CA_BUNDLE` でそのファイルを指定する**方法でも対応できます。`-e` で指定した値は、イメージの `ENV` より優先されます。B-1 の確認結果から動作するはずですが、実際のコンテナでは試していないので**要確認**です。
 
 ```bash
-mkdir -p /opt/dify-ssoJ/certs
+mkdir -p /opt/dify-sso-ca   # リポジトリの外に置く（誤コミット防止）
 # ホストの公開 CA バンドル + 社内 CA（RHEL 系のホストでは /etc/pki/tls/certs/ca-bundle.crt）
-cat /etc/ssl/certs/ca-certificates.crt /path/to/社内CA.crt > /opt/dify-ssoJ/certs/ca-bundle.crt
+cat /etc/ssl/certs/ca-certificates.crt /path/to/company-root.crt /path/to/company-intermediate.crt > /opt/dify-sso-ca/ca-bundle.crt
 
 docker run -d \
   --name dify-sso --hostname dify-sso --restart always \
   --network docker_default \
   --env-file /opt/dify-ssoJ/.env \
   -e REQUESTS_CA_BUNDLE=/etc/dify-sso/ca-bundle.crt \
-  -v /opt/dify-ssoJ/certs/ca-bundle.crt:/etc/dify-sso/ca-bundle.crt:ro \
-  ghcr.io/xjfyt/dify-sso:latest
+  -v /opt/dify-sso-ca/ca-bundle.crt:/etc/dify-sso/ca-bundle.crt:ro \
+  dify-ssoj:local
 ```
 
 - `REQUESTS_CA_BUNDLE` は `.env` に書いても構いません。
 - 証明書を `/usr/local/share/ca-certificates/` にマウントするだけでは**反映されません**。起動時に `update-ca-certificates` は実行されないためです。
+- 公開イメージ（`ghcr.io/xjfyt/dify-sso:latest`）でも同じ方法を使えますが、このフォークの修正は入っていません（A-6 の方法 2 を参照）。
 
 ### B-5. 接続の確認
 
@@ -356,8 +341,9 @@ docker run --rm --network docker_default dify-ssoj:local \
 openssl s_client -connect keycloak.example.local:443 -servername keycloak.example.local -showcerts </dev/null
 # "Certificate chain" の s:（subject）と i:（issuer）で、中間 CA が送られているかを確認する
 
-openssl s_client -connect keycloak.example.local:443 -servername keycloak.example.local -CAfile tslabCA.crt </dev/null 2>/dev/null | grep 'Verify return code'
-# "Verify return code: 0 (ok)" であれば、そのファイルでチェーンを検証できている
+cat certs/*.crt > /tmp/company-ca.pem
+openssl s_client -connect keycloak.example.local:443 -servername keycloak.example.local -CAfile /tmp/company-ca.pem </dev/null 2>/dev/null | grep 'Verify return code'
+# "Verify return code: 0 (ok)" であれば、certs/ の証明書でチェーンを検証できている
 ```
 
 ### B-6. 対象範囲
@@ -373,12 +359,12 @@ openssl s_client -connect keycloak.example.local:443 -servername keycloak.exampl
 
 | エラー（`docker logs dify-sso` などに出るもの） | 主な原因 | 対処 |
 | --- | --- | --- |
-| `SSLError ... CERTIFICATE_VERIFY_FAILED ... unable to get local issuer certificate` | 社内 CA がバンドルに入っていない。`REQUESTS_CA_BUNDLE` が設定されていない。中間 CA が足りない | B-3 または B-4 をやり直す。B-5 の `openssl s_client` でチェーンを確認し、必要なら中間 CA も追加する |
-| `... self-signed certificate in certificate chain` | ルート CA が信頼されていない | `tslabCA.crt` がルート CA であることを `-subject` と `-issuer` が同じかどうかで確認する |
+| `SSLError ... CERTIFICATE_VERIFY_FAILED ... unable to get local issuer certificate` | 社内 CA がバンドルに入っていない（`certs/` に置かずにビルドした、拡張子が `.crt` でない）。中間 CA が足りない。B-4 で `REQUESTS_CA_BUNDLE` を指定していない | B-3 または B-4 をやり直す。B-5 の `openssl s_client` でチェーンを確認し、必要なら中間 CA も追加する |
+| `... self-signed certificate in certificate chain` | ルート CA が信頼されていない | `certs/` に置いた証明書がルート CA であることを、`-subject` と `-issuer` が同じかどうかで確認する |
 | `... Hostname mismatch, certificate is not valid for '...'` | `OIDC_DISCOVERY_URL` のホスト名、または discovery が返すエンドポイントのホスト名が、証明書の SAN と一致しない | 証明書の SAN に含まれる FQDN で接続する。Keycloak のホスト名の設定を確認する |
 | `... certificate has expired` | サーバー証明書または CA 証明書の期限切れ | `openssl x509 -enddate` で確認して更新する |
 | `Could not find a suitable TLS CA certificate bundle, invalid path: ...` | `REQUESTS_CA_BUNDLE` で指定したファイルがコンテナ内にない | マウント先のパスと `-v` の指定を確認する |
-| ビルド時の `"/tslabCA.crt": not found` | リポジトリ直下に `tslabCA.crt` がない | B-2 の場所に置く。社内 CA を使わない場合は A-3 の 3 を行う |
+| ビルド時の `"/certs": not found` | `certs/` ディレクトリがない（`.gitkeep` ごと削除した、など） | `mkdir certs` で作り直す（空で構わない） |
 | `Failed to load OIDC configuration` | discovery URL が 200 を返さない（URL の誤り、レルム名の誤り、プロキシなど） | B-5 のコマンドで、ステータスコードとレスポンスを確認する |
 
 > [!CAUTION]
@@ -400,8 +386,8 @@ openssl s_client -connect keycloak.example.local:443 -servername keycloak.exampl
 | ログインできるが、ワークスペースがない、またはエラーになる | `TENANT_ID` が `SELECT id,name FROM tenants;` の `id` と一致しているか（空白などが混じっていないか） |
 | SSO ボタンが表示されない | `curl .../console/api/system-features` の結果が dify-sso のものか（Nginx の location の順番。`/console/api` より上にあるか）。`SSO_ENFORCED_FOR_SIGNIN=true` か。ブラウザのキャッシュ |
 | 時刻がずれて見える | `TIMEZONE`（`.env.example` は `Asia/Shanghai`）を `Asia/Tokyo` にする。ログの時刻は `LOG_TZ`（既定値 `UTC`）で決まるので、日本時間で見たい場合は `LOG_TZ=Asia/Tokyo` にする。DB への接続は常に `timezone=UTC` で、ログイン日時は UTC で保存される（`app/configs/database_config.py:104`、`app/libs/helper.py:16-17`） |
-| 約 1 時間後にログアウトされる | README の既知の問題 5（リフレッシュトークンが約 30 秒で消える）が原因の可能性がある（**要確認**） |
-| 起動直後にコンテナが終了する、または再起動を繰り返す | `docker logs dify-sso` で、`IndentationError`（A-3 の 1）、`OIDC配置不完整` / `Failed to load OIDC configuration`（discovery URL）、`CERTIFICATE_VERIFY_FAILED`（B 章）を確認する |
+| 約 1 時間後にログアウトされる、WebApp の SSO ログインがすぐ切れる | 公開イメージ（`ghcr.io/xjfyt/dify-sso:latest`）や上流の古いコードを使っていないか。リフレッシュトークンの有効期限と WebApp のトークンの `exp` の不具合は、このフォークで修正済み |
+| 起動直後にコンテナが終了する、または再起動を繰り返す | `docker logs dify-sso` で、`OIDC配置不完整` / `Failed to load OIDC configuration`（discovery URL）、`CERTIFICATE_VERIFY_FAILED`（B 章）を確認する。上流のコード（`86b4f58`）を使っている場合は `IndentationError` で起動しない |
 
 ### アップデート時の注意
 
@@ -409,4 +395,5 @@ openssl s_client -connect keycloak.example.local:443 -servername keycloak.exampl
 - Dify をアップデートすると `docker/nginx/conf.d/default.conf.template` が上書きされることがあります。**A-7 の location が残っているか**を毎回確認してください。
 - Dify のバージョンに合わせて `APP_DSL_VERSION` と `LEGACY_KNOWLEDGE_RATE_LIMIT_AS_OBJECT` を見直してください。
 - Dify の内部 API や DB スキーマ（`accounts`、`tenant_account_joins`、`sites`、`installed_apps`）が変わると、動かなくなる可能性があります。リリースノートを確認してください。
-- dify-sso を更新するとき（`git pull` など）は、A-3 の修正が上流で取り込まれたかを確認し、イメージをビルドし直してから `docker rm -f dify-sso` と `docker run` でコンテナを作り直します。社内 CA を組み込んでいる場合は、`tslabCA.crt` も忘れずに置いてください。
+- dify-sso を更新するとき（`git pull` など）は、イメージをビルドし直してから `docker rm -f dify-sso` と `docker run` でコンテナを作り直します。`certs/` の証明書は Git の管理外なので、別の場所に clone し直した場合は置き直してください。
+- 上流（lockdlock/dify-ssoJ）の変更を取り込むときは、このフォークの修正（README の「既知の問題と修正状況」）と競合していないか確認してください。
